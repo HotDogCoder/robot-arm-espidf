@@ -38,10 +38,10 @@ void init_servo(gpio_num_t gpio_num, ledc_channel_t channel)
     ledc_timer_config_t ledc_timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .timer_num = LEDC_TIMER_0,
-        .duty_resolution = LEDC_TIMER_16_BIT,
+        .duty_resolution = LEDC_TIMER_8_BIT, // Change to 8-bit resolution
         .freq_hz = 50,
         .clk_cfg = LEDC_AUTO_CLK};
-    ledc_timer_config(&ledc_timer);
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
 
     ledc_channel_config_t ledc_channel = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
@@ -51,14 +51,15 @@ void init_servo(gpio_num_t gpio_num, ledc_channel_t channel)
         .gpio_num = gpio_num,
         .duty = 0,
         .hpoint = 0};
-    ledc_channel_config(&ledc_channel);
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }
 
 // Set servo angle
 void set_servo_angle(ledc_channel_t channel, uint32_t angle)
 {
     uint32_t duty = SERVO_MIN_PULSEWIDTH_US + (((SERVO_MAX_PULSEWIDTH_US - SERVO_MIN_PULSEWIDTH_US) * angle) / SERVO_MAX_DEGREE);
-    duty = (duty * 8191) / 20000;
+    duty = (duty * 255) / 20000;
+    ESP_LOGI(TAG, "Setting servo on channel %d to angle %u with duty %u", channel, (unsigned int)angle, (unsigned int)duty);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, channel);
 }
@@ -195,7 +196,6 @@ static esp_err_t set_angle_post_handler(httpd_req_t *req)
     }
     angle = angle_json->valueint;
     ESP_LOGI(TAG, "Angle: %d", angle);
-    cJSON_Delete(json);
 
     if (angle < 0 || angle > 180)
     {
@@ -205,24 +205,24 @@ static esp_err_t set_angle_post_handler(httpd_req_t *req)
     }
 
     // Debugging: Print lengths of strings being compared
-    ESP_LOGI(TAG, "Comparing servo '%s' with 'base' (length %d vs %d)", servo, strlen(servo), strlen("base"));
+    ESP_LOGI(TAG, "Comparing servo '%s' with 'base' (length %d vs %d)", servo, (int)strlen(servo), (int)strlen("base"));
 
-    if (strcmp(servo, "base") == 0)
+    if (strncmp(servo, "base", strlen("base")) == 0)
     {
         ESP_LOGI(TAG, "Setting base servo angle");
         set_servo_angle(LEDC_CHANNEL_0, angle);
     }
-    else if (strcmp(servo, "shoulder") == 0)
+    else if (strncmp(servo, "shoulder", strlen("shoulder")) == 0)
     {
         ESP_LOGI(TAG, "Setting shoulder servo angle");
         set_servo_angle(LEDC_CHANNEL_1, angle);
     }
-    else if (strcmp(servo, "elbow") == 0)
+    else if (strncmp(servo, "elbow", strlen("elbow")) == 0)
     {
         ESP_LOGI(TAG, "Setting elbow servo angle");
         set_servo_angle(LEDC_CHANNEL_2, angle);
     }
-    else if (strcmp(servo, "gripper") == 0)
+    else if (strncmp(servo, "gripper", strlen("gripper")) == 0)
     {
         ESP_LOGI(TAG, "Setting gripper servo angle");
         set_servo_angle(LEDC_CHANNEL_3, angle);
@@ -234,6 +234,7 @@ static esp_err_t set_angle_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    cJSON_Delete(json);
     const char *response = "Angle set successfully";
     httpd_resp_send(req, response, strlen(response));
     return ESP_OK;
@@ -267,8 +268,6 @@ httpd_handle_t start_webserver(void)
 // Main application
 void app_main(void)
 {
-    // Set log level to verbose
-    // esp_log_level_set("*", ESP_LOG_VERBOSE);
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -285,10 +284,10 @@ void app_main(void)
     init_servo(SERVO_PIN_GRIPPER, LEDC_CHANNEL_3);
 
     // Set initial servo angles
-    set_servo_angle(LEDC_CHANNEL_0, 90); // Base
-    set_servo_angle(LEDC_CHANNEL_1, 90); // Shoulder
-    set_servo_angle(LEDC_CHANNEL_2, 90); // Elbow
-    set_servo_angle(LEDC_CHANNEL_3, 90); // Gripper
+    // set_servo_angle(LEDC_CHANNEL_0, 0);  // Base
+    // set_servo_angle(LEDC_CHANNEL_1, 45); // Shoulder
+    // set_servo_angle(LEDC_CHANNEL_2, 50); // Elbow
+    // set_servo_angle(LEDC_CHANNEL_3, 30); // Gripper
 
     ESP_LOGI(TAG, "Servos initialized and set to initial position.");
 
